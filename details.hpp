@@ -22,14 +22,6 @@ enum class request_cmd : uint8_t
     write
 };
 
-// Internal error codes for client <-> server communication
-enum class error_code_int : uint8_t
-{
-    none,
-    json_parse,
-    invalid_path,
-    value_error
-};
 
 const std::string_view DEFAULT_SOCK_FILE = "/tmp/json_server.sock";
 
@@ -45,7 +37,7 @@ void transmit_size_info(T &socket, const uint32_t payload_size)
 
     if (ret != sizeof(uint32_t))
     {
-        throw err::InternalException(lh::nostd::source_location::current(), "write failed: {}, {}", socket.last_error(),
+        throw json_server::InternalException(lh::nostd::source_location::current(), "write failed: {}, {}", socket.last_error(),
                                      socket.last_error_str());
     }
 }
@@ -64,7 +56,7 @@ template <typename T>
     }
     if (ret != sizeof(uint32_t))
     {
-        throw err::InternalException(lh::nostd::source_location::current(), "read failed: {}, {}", socket.last_error(),
+        throw json_server::InternalException(lh::nostd::source_location::current(), "read failed: {}, {}", socket.last_error(),
                                      socket.last_error_str());
     }
 

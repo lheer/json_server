@@ -79,7 +79,15 @@ public:
         }
         else
         {
-            return std::get<T>(get_impl_basic());
+            try
+            {
+                return std::get<T>(get_impl_basic());
+            }
+            catch (const std::bad_variant_access &)
+            {
+                throw json_server::RuntimeException(json_server::error_code::type_error,
+                                                    "type error while getting element {}", m_resource_path);
+            }
         }
     }
 
@@ -118,7 +126,7 @@ private:
     std::filesystem::path m_socket_file;
 
     // Read server response object consisting of an error code and some value.
-    std::tuple<details::error_code_int, nlohmann::json> read_server_reply();
+    std::tuple<json_server::error_code, nlohmann::json> read_server_reply();
 
     // Get some JSON value from the server (implementation for nlohmann::json type).
     nlohmann::json get_impl();

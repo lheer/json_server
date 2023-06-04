@@ -13,7 +13,7 @@ namespace impl
     {
         if (!j_val.is_primitive())
         {
-            throw err::InternalException(lh::nostd::source_location::current(), "Not a primitive type");
+            throw json_server::InternalException(lh::nostd::source_location::current(), "Not a primitive type");
         }
         if (j_val.is_number_integer())
         {
@@ -33,7 +33,8 @@ namespace impl
         }
         else
         {
-            throw err::InternalException(lh::nostd::source_location::current(), "Invalid type: {}", j_val.type_name());
+            throw json_server::InternalException(lh::nostd::source_location::current(), "Invalid type: {}",
+                                                 j_val.type_name());
         }
     }
 
@@ -65,7 +66,8 @@ namespace impl
         }
         else
         {
-            throw err::InternalException(lh::nostd::source_location::current(), "Invalid type: {}", val.index());
+            throw json_server::InternalException(lh::nostd::source_location::current(), "Invalid type: {}",
+                                                 val.index());
         }
     }
 } // namespace impl
@@ -75,13 +77,13 @@ EndpointConnection::EndpointConnection(const std::string &resource_path, const s
 {
     if (!m_srv_con.connect(sockpp::unix_address(m_socket_file)))
     {
-        throw err::RuntimeException(err::error_code::socket_error, "Unable to connect to socket file {}",
-                                    m_socket_file.string());
+        throw json_server::RuntimeException(json_server::error_code::socket_error,
+                                            "Unable to connect to socket file {}", m_socket_file.string());
     }
     m_resource_path = resource_path;
 }
 
-std::tuple<details::error_code_int, nlohmann::json> EndpointConnection::read_server_reply()
+std::tuple<json_server::error_code, nlohmann::json> EndpointConnection::read_server_reply()
 {
     const auto sz = details::receive_size_info(m_srv_con);
     std::vector<uint8_t> buffer;
@@ -90,7 +92,7 @@ std::tuple<details::error_code_int, nlohmann::json> EndpointConnection::read_ser
     m_srv_con.read_n(buffer.data(), buffer.size());
     nlohmann::json j_obj;
     j_obj = nlohmann::json::from_msgpack(buffer);
-    return {static_cast<details::error_code_int>(j_obj.at("err_code").get<int>()), j_obj.at("value")};
+    return {static_cast<json_server::error_code>(j_obj.at("err_code").get<int>()), j_obj.at("value")};
 }
 
 nlohmann::json EndpointConnection::get_impl()
@@ -106,21 +108,20 @@ nlohmann::json EndpointConnection::get_impl()
     const auto ret = m_srv_con.write_n(as_msgpack.data(), as_msgpack.size());
     if (ret == -1)
     {
-        throw err::InternalException(lh::nostd::source_location::current(), "Write failed with code {}, msg {}",
-                                     m_srv_con.last_error(), m_srv_con.last_error_str());
+        throw json_server::InternalException(lh::nostd::source_location::current(), "Write failed with code {}, msg {}",
+                                             m_srv_con.last_error(), m_srv_con.last_error_str());
     }
     if (static_cast<size_t>(ret) != as_msgpack.size())
     {
-        throw err::InternalException(lh::nostd::source_location::current(), "Write failed: not all bytes transmitted",
-                                     ret);
+        throw json_server::InternalException(lh::nostd::source_location::current(),
+                                             "Write failed: not all bytes transmitted", ret);
     }
 
     // Receive answer
     const auto [err, j_val] = read_server_reply();
-    if (err != details::error_code_int::none)
+    if (err != json_server::error_code::none)
     {
-        throw err::InternalException(lh::nostd::source_location::current(), "get failed with code {}",
-                                     static_cast<int>(err));
+        throw json_server::RuntimeException(err, "get failed");
     }
     return j_val;
 }
@@ -140,20 +141,19 @@ void EndpointConnection::set_impl(const nlohmann::json &val)
     const auto ret = m_srv_con.write_n(as_msgpack.data(), as_msgpack.size());
     if (ret == -1)
     {
-        throw err::InternalException(lh::nostd::source_location::current(), "Write failed with code {}", ret);
+        throw json_server::InternalException(lh::nostd::source_location::current(), "Write failed with code {}", ret);
     }
     if (static_cast<size_t>(ret) != as_msgpack.size())
     {
-        throw err::InternalException(lh::nostd::source_location::current(), "Write failed: not all bytes transmitted",
-                                     ret);
+        throw json_server::InternalException(lh::nostd::source_location::current(),
+                                             "Write failed: not all bytes transmitted", ret);
     }
 
     // Receive answer
     const auto [err, _] = read_server_reply();
-    if (err != details::error_code_int::none)
+    if (err != json_server::error_code::none)
     {
-        throw err::InternalException(lh::nostd::source_location::current(), "set failed (code {})",
-                                     static_cast<int>(err));
+        throw json_server::RuntimeException(err, "set failed");
     }
 }
 
@@ -168,7 +168,7 @@ types::CompoundType EndpointConnection::get_impl_array()
 
     if (!j_val.is_array())
     {
-        throw err::InternalException(lh::nostd::source_location::current(), "Not an array type");
+        throw json_server::InternalException(lh::nostd::source_location::current(), "Not an array type");
     }
     if (j_val.empty())
     {

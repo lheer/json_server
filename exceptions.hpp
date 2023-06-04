@@ -61,7 +61,7 @@ private:
 } // namespace lh::nostd
 
 
-namespace err
+namespace json_server
 {
 namespace details
 {
@@ -115,16 +115,18 @@ class InternalException : public details::LocationException
     using details::LocationException::LocationException;
 };
 
-// API error codes
+// Error codes
 enum class error_code : uint8_t
 {
+    none,
     file_not_found,
-    parse_error,
+    json_parse_error,
     socket_error,
-    type_error
+    type_error,
+    json_path_error
 };
 
-// Main exception class with an error code for all API errors.
+// Main exception class with an error code for all public API errors.
 class RuntimeException : public details::FormattedException
 {
 public:
@@ -137,4 +139,4 @@ public:
     error_code m_err_code;
 };
 
-} // namespace err
+} // namespace json_server
