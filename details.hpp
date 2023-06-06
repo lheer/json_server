@@ -1,6 +1,3 @@
-/*
- * Common code shared between client and server implementation.
- */
 #pragma once
 
 #include <array>
@@ -19,7 +16,9 @@ namespace details
 enum class request_cmd : uint8_t
 {
     read,
-    write
+    write,
+    lock,
+    unlock
 };
 
 

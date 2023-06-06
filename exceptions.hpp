@@ -123,7 +123,8 @@ enum class error_code : uint8_t
     json_parse_error,
     socket_error,
     type_error,
-    json_path_error
+    json_path_error,
+    lock
 };
 
 // Main exception class with an error code for all public API errors.

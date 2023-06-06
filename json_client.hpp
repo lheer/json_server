@@ -44,13 +44,22 @@ namespace impl
 class EndpointConnection
 {
 public:
-    explicit EndpointConnection(const std::string &resource_path,
+    /* Connect to a resource on the JSON server at `resource_path`.
+     * If `exclusive` is set to true, lock the resource on the server for exclusive access until
+     * either `unlock()` is called explicitely or the object goes out of scope.
+     */
+    explicit EndpointConnection(const std::string &resource_path, const bool exclusive = false,
                                 const std::filesystem::path &socket_file = details::DEFAULT_SOCK_FILE);
     EndpointConnection(const EndpointConnection &) = delete;
     EndpointConnection(EndpointConnection &&) = default;
     EndpointConnection &operator=(const EndpointConnection &) = delete;
     EndpointConnection &operator=(EndpointConnection &&) = default;
     ~EndpointConnection();
+
+    // Lock the resource on the server.
+    void lock();
+    // Unlock the resource on the server.
+    void unlock();
 
     // Retrieve some value from the model.
     template <typename T>
@@ -124,7 +133,10 @@ private:
     std::string m_resource_path;
     sockpp::unix_connector m_srv_con;
     std::filesystem::path m_socket_file;
+    bool m_is_locked;
 
+    // Send a request to the server.
+    void send_request(const nlohmann::json &req);
     // Read server response object consisting of an error code and some value.
     std::tuple<json_server::error_code, nlohmann::json> read_server_reply();
 

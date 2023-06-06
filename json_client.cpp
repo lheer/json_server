@@ -72,15 +72,80 @@ namespace impl
     }
 } // namespace impl
 
-EndpointConnection::EndpointConnection(const std::string &resource_path, const std::filesystem::path &socket_file)
-    : m_resource_path(resource_path), m_socket_file(socket_file)
+EndpointConnection::EndpointConnection(const std::string &resource_path, const bool exclusive,
+                                       const std::filesystem::path &socket_file)
+    : m_resource_path(resource_path), m_socket_file(socket_file), m_is_locked(false)
 {
     if (!m_srv_con.connect(sockpp::unix_address(m_socket_file)))
     {
         throw json_server::RuntimeException(json_server::error_code::socket_error,
                                             "Unable to connect to socket file {}", m_socket_file.string());
     }
-    m_resource_path = resource_path;
+
+    if (exclusive)
+    {
+        lock();
+    }
+}
+
+void EndpointConnection::send_request(const nlohmann::json &req)
+{
+    // Transmit size and payload
+    const auto as_msgpack = nlohmann::json::to_msgpack(req);
+    details::transmit_size_info(m_srv_con, static_cast<uint32_t>(as_msgpack.size()));
+
+    const auto ret = m_srv_con.write_n(as_msgpack.data(), as_msgpack.size());
+    if (ret == -1)
+    {
+        throw json_server::InternalException(lh::nostd::source_location::current(), "Write failed with code {}, msg {}",
+                                             m_srv_con.last_error(), m_srv_con.last_error_str());
+    }
+    if (static_cast<size_t>(ret) != as_msgpack.size())
+    {
+        throw json_server::InternalException(lh::nostd::source_location::current(),
+                                             "Write failed: not all bytes transmitted", ret);
+    }
+}
+
+void EndpointConnection::lock()
+{
+    if (m_is_locked)
+    {
+        return;
+    }
+    nlohmann::json req;
+    req["cmd"] = static_cast<uint8_t>(details::request_cmd::lock);
+    req["path"] = m_resource_path;
+    send_request(req);
+
+    // Receive answer
+    const auto [err, _] = read_server_reply();
+    if (err != json_server::error_code::none)
+    {
+        throw json_server::RuntimeException(err, "lock failed for {}: ", m_resource_path);
+    }
+
+    m_is_locked = true;
+}
+
+void EndpointConnection::unlock()
+{
+    if (!m_is_locked)
+    {
+        throw json_server::RuntimeException(json_server::error_code::lock, "unlock failed for {}: was not locked",
+                                            m_resource_path);
+    }
+    nlohmann::json req;
+    req["cmd"] = static_cast<uint8_t>(details::request_cmd::unlock);
+    req["path"] = m_resource_path;
+    send_request(req);
+
+    // Receive answer
+    const auto [err, _] = read_server_reply();
+    if (err != json_server::error_code::none)
+    {
+        throw json_server::RuntimeException(err, "unlock failed for {}", m_resource_path);
+    }
 }
 
 std::tuple<json_server::error_code, nlohmann::json> EndpointConnection::read_server_reply()
@@ -100,28 +165,13 @@ nlohmann::json EndpointConnection::get_impl()
     nlohmann::json req;
     req["cmd"] = static_cast<uint8_t>(details::request_cmd::read);
     req["path"] = m_resource_path;
-
-    // Transmit size and payload
-    const auto as_msgpack = nlohmann::json::to_msgpack(req);
-    details::transmit_size_info(m_srv_con, static_cast<uint32_t>(as_msgpack.size()));
-
-    const auto ret = m_srv_con.write_n(as_msgpack.data(), as_msgpack.size());
-    if (ret == -1)
-    {
-        throw json_server::InternalException(lh::nostd::source_location::current(), "Write failed with code {}, msg {}",
-                                             m_srv_con.last_error(), m_srv_con.last_error_str());
-    }
-    if (static_cast<size_t>(ret) != as_msgpack.size())
-    {
-        throw json_server::InternalException(lh::nostd::source_location::current(),
-                                             "Write failed: not all bytes transmitted", ret);
-    }
+    send_request(req);
 
     // Receive answer
     const auto [err, j_val] = read_server_reply();
     if (err != json_server::error_code::none)
     {
-        throw json_server::RuntimeException(err, "get failed");
+        throw json_server::RuntimeException(err, "get failed for {}", m_resource_path);
     }
     return j_val;
 }
@@ -133,27 +183,13 @@ void EndpointConnection::set_impl(const nlohmann::json &val)
     req["cmd"] = static_cast<uint8_t>(details::request_cmd::write);
     req["path"] = m_resource_path;
     req["value"] = val;
-
-    // Send size and payload
-    const auto as_msgpack = nlohmann::json::to_msgpack(req);
-    details::transmit_size_info(m_srv_con, static_cast<uint32_t>(as_msgpack.size()));
-
-    const auto ret = m_srv_con.write_n(as_msgpack.data(), as_msgpack.size());
-    if (ret == -1)
-    {
-        throw json_server::InternalException(lh::nostd::source_location::current(), "Write failed with code {}", ret);
-    }
-    if (static_cast<size_t>(ret) != as_msgpack.size())
-    {
-        throw json_server::InternalException(lh::nostd::source_location::current(),
-                                             "Write failed: not all bytes transmitted", ret);
-    }
+    send_request(req);
 
     // Receive answer
     const auto [err, _] = read_server_reply();
     if (err != json_server::error_code::none)
     {
-        throw json_server::RuntimeException(err, "set failed");
+        throw json_server::RuntimeException(err, "set failed for {}", m_resource_path);
     }
 }
 
@@ -198,6 +234,10 @@ void EndpointConnection::set_impl_array(const types::CompoundType &val_array)
 
 EndpointConnection::~EndpointConnection()
 {
+    if (m_is_locked)
+    {
+        unlock();
+    }
     if (m_srv_con.is_open())
     {
         m_srv_con.close();

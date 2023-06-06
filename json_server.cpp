@@ -1,9 +1,11 @@
 #include "json_server.hpp"
 
+#include <map>
 #include <thread>
 #include <mutex>
 #include <functional>
 #include <fstream>
+
 
 #include "nlohmann/json.hpp"
 #include "sockpp/unix_acceptor.h"
@@ -24,7 +26,7 @@ namespace
     std::mutex g_model_mutex{};
     json g_model{};
     std::filesystem::path g_uds_socket_file{};
-
+    std::map<std::string, std::mutex> g_mutex_map{};
 
     // Accept incoming client connections and dispatch them to the handler function f_callback.
     void server_loop(std::function<void(sockpp::unix_socket sock)> f_callback)
@@ -109,6 +111,7 @@ namespace
                 {
                     case ::details::request_cmd::read:
                     {
+                        // Read some value on the model
                         json val;
                         {
                             const std::scoped_lock lock(g_model_mutex);
@@ -124,6 +127,18 @@ namespace
                             const std::scoped_lock lock(g_model_mutex);
                             g_model.at(nlohmann::json_pointer<std::string>(path)) = j_recv.at("value");
                         }
+                        transmit_server_reply(socket, json::value_t::null, ::json_server::error_code::none);
+                        break;
+                    }
+                    case ::details::request_cmd::lock:
+                    {
+                        g_mutex_map[path].lock();
+                        transmit_server_reply(socket, json::value_t::null, ::json_server::error_code::none);
+                        break;
+                    }
+                    case ::details::request_cmd::unlock:
+                    {
+                        g_mutex_map.at(path).unlock();
                         transmit_server_reply(socket, json::value_t::null, ::json_server::error_code::none);
                         break;
                     }
@@ -156,7 +171,8 @@ void init(const std::filesystem::path &json_resource, const std::filesystem::pat
     }
     catch (const json::parse_error &e)
     {
-        throw json_server::RuntimeException(json_server::error_code::json_parse_error, "JSON parse error: {}", e.what());
+        throw json_server::RuntimeException(json_server::error_code::json_parse_error, "JSON parse error: {}",
+                                            e.what());
     }
 
     sockpp::initialize();
