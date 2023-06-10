@@ -8,6 +8,11 @@ target_include_directories(test PRIVATE
 )
 target_link_libraries(test json_server)
 
+if (WITH_GPROF)
+    target_compile_options(test PRIVATE -pg)
+    target_link_options(test PRIVATE -pg)
+endif(WITH_GPROF)
+
 add_custom_command(TARGET test POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
     ${CMAKE_SOURCE_DIR}/test/test_data.json $<TARGET_FILE_DIR:json_server>
 )

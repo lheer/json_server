@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(fmt REQUIRED)
 
 option(WITH_TESTS "Build tests" OFF)
+option(WITH_GPROF "Build with gprof enabled" OFF)
 option(SOCKPP_BUILD_SHARED "" OFF)
 option(SOCKPP_BUILD_STATIC "" ON)
 add_subdirectory(externals/sockpp)
@@ -27,6 +28,11 @@ target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -Wshadow
 target_link_options(${PROJECT_NAME} PRIVATE)
 target_include_directories(${PROJECT_NAME} PRIVATE externals externals/sockpp/include)
 target_link_libraries(${PROJECT_NAME} PRIVATE sockpp-static fmt::fmt)
+
+if (WITH_GPROF)
+    target_compile_options(${PROJECT_NAME} PRIVATE -pg)
+    target_link_options(${PROJECT_NAME} PRIVATE -pg)
+endif(WITH_GPROF)
 
 if (WITH_TESTS)
 add_subdirectory(test)
